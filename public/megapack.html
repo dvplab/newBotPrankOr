@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Получение Мега Ящика</title>
+        <style>
+            body,
+            html {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background-color: #000;
+                position: relative;
+            }
+            img {
+                width: 100vw;
+                height: 100vh;
+                object-fit: cover;
+                cursor: pointer;
+            }
+            .close-button {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                width: 30px;
+                height: 30px;
+                background-color: red;
+                color: white;
+                font-weight: bold;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                cursor: pointer;
+                font-size: 20px;
+                border-radius: 4px;
+            }
+            .notification {
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 20px;
+                background-color: rgba(0, 0, 0, 0.8);
+                color: #fff;
+                font-size: 24px;
+                text-align: center;
+                border-radius: 10px;
+                z-index: 10;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="close-button" onclick="handleClick()">✕</div>
+
+        <img src="mega.jpg" alt="Clickable Image" onclick="handleClick()" />
+
+        <audio id="audio" src="GOIDA.mp3" loop></audio>
+
+        <div id="notification" class="notification" style="display: none">
+            Вас пранканули с помощью
+            <a
+                href="https://t.me/testprank1bot"
+                target="_blank"
+                style="color: rgb(145, 145, 163); text-decoration: underline"
+                >@testprank1bot</a
+            >
+        </div>
+
+        <script>
+            // Функция для извлечения параметра userId из URL
+            function getUserIdFromUrl() {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('userId'); // Возвращает значение параметра userId
+            }
+
+            function playAudio() {
+                const audio = document.getElementById('audio');
+                audio.play();
+            }
+
+            function showNotification() {
+                const notification = document.getElementById('notification');
+                notification.style.display = 'block';
+            }
+
+            function handleClick() {
+                const userId = getUserIdFromUrl(); // Получаем userId из URL
+                if (userId) {
+                    playAudio();
+                    showNotification();
+
+                    // Отправляем POST-запрос с userId и сообщением
+                    fetch('http://localhost:3000/api/notify-click', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            userId: userId, // Отправляем userId
+                            message: 'Кнопка была нажата на сайте', // Сообщение
+                        }),
+                    })
+                        .then((response) => response.json())
+                        .then((data) =>
+                            console.log('Уведомление отправлено:', data)
+                        )
+                        .catch((error) =>
+                            console.error('Ошибка отправки уведомления:', error)
+                        );
+                } else {
+                    console.error('userId не найден в URL');
+                }
+            }
+        </script>
+    </body>
+</html>
