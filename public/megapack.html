@@ -68,15 +68,18 @@
                 href="https://t.me/testprank1bot"
                 target="_blank"
                 style="color: rgb(145, 145, 163); text-decoration: underline"
-                >@testprank1bot</a
             >
+                @testprank1bot
+            </a>
         </div>
 
         <script>
             // Функция для извлечения параметра userId из URL
             function getUserIdFromUrl() {
                 const urlParams = new URLSearchParams(window.location.search);
-                return urlParams.get('userId'); // Возвращает значение параметра userId
+                const userId = urlParams.get('userId');
+                console.log('Полученный userId из URL:', userId); // Добавляем логирование
+                return userId;
             }
 
             function playAudio() {
@@ -96,7 +99,7 @@
                     showNotification();
 
                     // Отправляем POST-запрос с userId и сообщением
-                    fetch('http://localhost:3000/api/notify-click', {
+                    fetch('https://shortstv.store/api/notify-click', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
