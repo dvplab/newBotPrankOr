@@ -9,6 +9,20 @@ const users = {};
 
 const bot = new Bot(config.token);
 
+// Каналы для проверки подписки
+const CHANNELS = [
+    {
+        id: config.channelId1,
+        name: 'Первый Паблик',
+        link: config.channelLink1,
+    },
+    {
+        id: config.channelId2,
+        name: 'Второй Паблик',
+        link: config.channelLink2,
+    },
+];
+
 // Функция для сохранения chatId
 export async function saveChatId(userId, chatId) {
     try {
@@ -29,28 +43,37 @@ export async function saveChatId(userId, chatId) {
     }
 }
 
-// Функция для проверки подписки пользователя на канал
-export async function isSubscribed(userId) {
-    try {
-        const response = await axios.get(
-            `https://api.telegram.org/bot${config.token}/getChatMember`,
-            {
-                params: {
-                    chat_id: config.channelId,
-                    user_id: userId,
-                },
+// Функция для проверки подписки пользователя на каналы
+export async function checkSubscriptions(userId) {
+    let notSubscribed = [];
+
+    for (const channel of CHANNELS) {
+        try {
+            const response = await axios.get(
+                `https://api.telegram.org/bot${config.token}/getChatMember`,
+                {
+                    params: {
+                        chat_id: channel.id,
+                        user_id: userId,
+                    },
+                }
+            );
+            const memberStatus = response.data.result.status;
+
+            if (
+                !['member', 'administrator', 'creator'].includes(memberStatus)
+            ) {
+                notSubscribed.push(channel);
             }
-        );
-        const memberStatus = response.data.result.status;
-        return (
-            memberStatus === 'member' ||
-            memberStatus === 'administrator' ||
-            memberStatus === 'creator'
-        );
-    } catch (error) {
-        console.error('Ошибка при проверке подписки:', error);
-        return false;
+        } catch (error) {
+            console.error(
+                `Ошибка при проверке подписки на ${channel.name}:`,
+                error
+            );
+        }
     }
+
+    return notSubscribed;
 }
 
 // Обработка команды "/start"
@@ -61,18 +84,26 @@ bot.command('start', async (ctx) => {
     // Сохраняем chatId
     saveChatId(userId, chatId);
 
-    // Проверка подписки
-    const subscribed = await isSubscribed(userId);
+    // Проверка подписки на каналы
+    const notSubscribed = await checkSubscriptions(userId);
 
-    if (subscribed) {
+    if (notSubscribed.length > 0) {
+        // Отправка кнопок для подписки
+        const buttons = notSubscribed.map((channel) => [
+            { text: `Подписаться на ${channel.name}`, url: channel.link },
+        ]);
+        await ctx.reply(
+            'Чтобы получить доступ к ссылке, подпишитесь на следующие каналы:',
+            {
+                reply_markup: { inline_keyboard: buttons },
+            }
+        );
+    } else {
+        // Генерация ссылки
         const link = `${config.domain}/megapack?userId=${userId}`;
         await ctx.reply(
             `🔗 Вот твоя ссылка:\n\nОтправляй ссылку друзьям, чтобы пранкануть их.\n<a href="${link}">${link}</a>`,
             { parse_mode: 'HTML' }
-        );
-    } else {
-        await ctx.reply(
-            `Подпишитесь на наш канал ${config.channelId}, чтобы получить доступ к ссылке.`
         );
     }
 });
