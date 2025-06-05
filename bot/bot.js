@@ -1,27 +1,12 @@
 import { Bot } from 'grammy';
 import axios from 'axios';
 import { config } from '../config/config.js';
-
 import Chat from '../models/chat.js';
-
-// Место для хранения chat_id пользователей
-const users = {};
 
 const bot = new Bot(config.token);
 
-// Каналы для проверки подписки
-const CHANNELS = [
-    {
-        id: config.channelId1,
-        name: 'Первый Паблик',
-        link: config.channelLink1,
-    },
-    {
-        id: config.channelId2,
-        name: 'Второй Паблик',
-        link: config.channelLink2,
-    },
-];
+// Умная ссылка Flyer
+const MINI_APP_LINK = 'https://t.me/FlyWebTasksBot/app?startapp=3HkVUm';
 
 // Функция для сохранения chatId
 export async function saveChatId(userId, chatId) {
@@ -29,10 +14,8 @@ export async function saveChatId(userId, chatId) {
         let user = await Chat.findOne({ userId });
 
         if (user) {
-            // Обновляем chatId, если пользователь уже существует
             user.chatId = chatId;
         } else {
-            // Создаем нового пользователя, если его еще нет в базе
             user = new Chat({ userId, chatId });
         }
 
@@ -43,69 +26,95 @@ export async function saveChatId(userId, chatId) {
     }
 }
 
-// Функция для проверки подписки пользователя на каналы
-export async function checkSubscriptions(userId) {
-    let notSubscribed = [];
-
-    for (const channel of CHANNELS) {
-        try {
-            const response = await axios.get(
-                `https://api.telegram.org/bot${config.token}/getChatMember`,
-                {
-                    params: {
-                        chat_id: channel.id,
-                        user_id: userId,
-                    },
-                }
-            );
-            const memberStatus = response.data.result.status;
-
-            if (
-                !['member', 'administrator', 'creator'].includes(memberStatus)
-            ) {
-                notSubscribed.push(channel);
+// Проверка заданий Flyer
+export async function checkTasksCompleted(userId) {
+    try {
+        const { data } = await axios.post(
+            'https://api.flyerservice.io/get_completed_tasks',
+            {
+                key: config.flyerApiKey,
+                user_id: userId,
+            },
+            {
+                headers: { 'Content-Type': 'application/json' },
             }
-        } catch (error) {
-            console.error(
-                `Ошибка при проверке подписки на ${channel.name}:`,
-                error
-            );
-        }
-    }
+        );
 
-    return notSubscribed;
+        if (
+            data.error === 'The user does not have any tasks' ||
+            (data.result?.count_all_tasks || 0) === 0
+        ) {
+            return { status: 'no_tasks' };
+        }
+
+        if (data.error) {
+            console.warn('Flyer API error:', data.error);
+            return { status: 'error' };
+        }
+
+        const completed = (data.result.completed_tasks || []).length;
+        const total = data.result.count_all_tasks;
+
+        if (completed === total) {
+            return { status: 'completed' };
+        } else {
+            return { status: 'incomplete', completed, total };
+        }
+    } catch (error) {
+        console.error('Flyer check error:', error.response?.data || error);
+        return { status: 'error' };
+    }
 }
 
-// Обработка команды "/start"
+// Команда /start
 bot.command('start', async (ctx) => {
     const userId = ctx.from.id;
     const chatId = ctx.chat.id;
 
     // Сохраняем chatId
-    saveChatId(userId, chatId);
+    await saveChatId(userId, chatId);
 
-    // Проверка подписки на каналы
-    const notSubscribed = await checkSubscriptions(userId);
+    // Проверяем статус заданий
+    const flyerStatus = await checkTasksCompleted(userId);
 
-    if (notSubscribed.length > 0) {
-        // Отправка кнопок для подписки
-        const buttons = notSubscribed.map((channel) => [
-            { text: `Подписаться на ${channel.name}`, url: channel.link },
-        ]);
-        await ctx.reply(
-            'Чтобы получить доступ к ссылке, подпишитесь на следующие каналы:',
-            {
-                reply_markup: { inline_keyboard: buttons },
-            }
-        );
-    } else {
-        // Генерация ссылки
+    if (flyerStatus.status === 'completed') {
         const link = `${config.domain}/megapack?userId=${userId}`;
-        await ctx.reply(
+        return ctx.reply(
             `🔗 Вот твоя ссылка:\n\nОтправляй ссылку друзьям, чтобы пранкануть их.\n<a href="${link}">${link}</a>`,
             { parse_mode: 'HTML' }
         );
     }
+
+    if (flyerStatus.status === 'incomplete') {
+        const { completed, total } = flyerStatus;
+        return ctx.reply(
+            `🕒 Выполнено: ${completed} из ${total} заданий.\nЗавершите задания и снова нажмите /start:\n${MINI_APP_LINK}`
+        );
+    }
+
+    if (flyerStatus.status === 'no_tasks') {
+        // Проверим, есть ли пользователь в базе
+        const existingUser = await Chat.findOne({ userId });
+
+        if (existingUser) {
+            // Пользователь уже был, даем доступ
+            const link = `${config.domain}/megapack?userId=${userId}`;
+            return ctx.reply(
+                `🔗 Вот твоя ссылка:\n\nОтправляй ссылку друзьям, чтобы пранкануть их.\n<a href="${link}">${link}</a>`,
+                { parse_mode: 'HTML' }
+            );
+        } else {
+            // Новый пользователь без заданий — отправляем выполнять
+            return ctx.reply(
+                `📋 Чтобы получить доступ к ссылке, выполните задания:\n\n${MINI_APP_LINK}\n\nПосле выполнения нажмите /start`
+            );
+        }
+    }
+
+    // В случае ошибки — fallback
+    return ctx.reply(
+        `⚠️ Произошла ошибка при проверке заданий. Попробуйте позже.`
+    );
 });
 
 export default bot;

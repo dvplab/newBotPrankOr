@@ -10,5 +10,6 @@ export const config = {
     channelId1: process.env.CHANNEL_ID_1, // ID первого канала
     channelId2: process.env.CHANNEL_ID_2, // ID второго канала
     channelLink1: process.env.CHANNEL_LINK_1, // Ссылка на первый канал
-    channelLink2: process.env.CHANNEL_LINK_2, // Ссылка на второй канал
+    channelLink2: process.env.CHANNEL_LINK_2,
+    flyerApiKey: process.env.FLYER_API_KEY, // Ссылка на второй канал
 };
