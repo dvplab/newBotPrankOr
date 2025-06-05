@@ -6,7 +6,7 @@ import Chat from '../models/chat.js';
 const bot = new Bot(config.token);
 
 // Умная ссылка Flyer
-const MINI_APP_LINK = 'https://t.me/FlyWebTasksBot/app?startapp=3HkVUm';
+const MINI_APP_LINK = 'https://t.me/FlyWebTasksBot/app?startapp=3HkVvy';
 
 // Функция для сохранения chatId
 export async function saveChatId(userId, chatId) {
