@@ -20,10 +20,7 @@ app.use(express.static('public'));
 
 // Главная страница
 app.get('/', (req, res) => {
-    res.render('index', {
-        title: 'Главная страница',
-        message: 'Добро пожаловать!',
-    });
+    res.sendFile(path.join(__dirname, 'public', 'bots.html'));
 });
 
 // Получение значения __dirname в среде ES-модулей
