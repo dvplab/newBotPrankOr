@@ -11,9 +11,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Настройка EJS как шаблонизатора
-app.set('view engine', 'ejs');
-app.set('views', 'src/views');
+
 
 // Раздача статики
 app.use(express.static('public'));
