@@ -33,7 +33,7 @@ async function getTasksFromFlyer(userId, language_code = 'ru') {
         console.log('[Flyer API] get_tasks request:', {
             userId,
             language_code,
-            limit: 10,
+            limit: 4,
         });
 
         const { data } = await axios.post(
@@ -42,7 +42,7 @@ async function getTasksFromFlyer(userId, language_code = 'ru') {
                 key: config.flyerApiKey,
                 user_id: userId,
                 language_code,
-                limit: 10,
+                limit: 4,
             },
             { headers: { 'Content-Type': 'application/json' } }
         );
