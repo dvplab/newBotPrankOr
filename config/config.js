@@ -12,4 +12,5 @@ export const config = {
     channelLink1: process.env.CHANNEL_LINK_1, // Ссылка на первый канал
     channelLink2: process.env.CHANNEL_LINK_2,
     flyerApiKey: process.env.FLYER_API_KEY, // Ссылка на второй канал
+    subgramApiKey: process.env.API_SUBGRAM,
 };

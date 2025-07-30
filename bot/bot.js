@@ -1,159 +1,257 @@
-import { Bot } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import axios from 'axios';
 import { config } from '../config/config.js';
 import Chat from '../models/chat.js';
 
-// Инициализация бота
 const bot = new Bot(config.token);
 
-// Умная ссылка Flyer
-const MINI_APP_LINK = 'https://t.me/FlyWebTasksBot/app?startapp=3HkVvy';
+// Константы для обязательных каналов
+const CHANNELS = [
+    { id: config.channelId1, link: config.channelLink1 },
+    { id: config.channelId2, link: config.channelLink2 },
+];
 
-// === 📣 GramAds функция ===
-async function SendPostToChat(chatId) {
-    const token =
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyNzYzNyIsImp0aSI6ImQwMWMyYmMxLWU5MjAtNDdiYy04NGU4LTUwY2UzMTBlNTE4ZiIsIm5hbWUiOiLQntGALdCb0L7QstGD0YjQutCwIC8g0J_RgNCw0L3QuiIsImJvdGlkIjoiMTQ4MTkiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjI3NjM3IiwibmJmIjoxNzQ5MjQ1NjE5LCJleHAiOjE3NDk0NTQ0MTksImlzcyI6IlN0dWdub3YiLCJhdWQiOiJVc2VycyJ9.rLAf64WINuoHZhwJOIkxesYF4SnNWIDQsapbl1vm7Ns';
-
-    try {
-        const headers = new Headers();
-        headers.append('Authorization', `Bearer ${token}`);
-        headers.append('Content-Type', 'application/json');
-
-        const body = JSON.stringify({ SendToChatId: chatId });
-
-        const res = await fetch('https://api.gramads.net/ad/SendPost', {
-            method: 'POST',
-            headers,
-            body,
-        });
-
-        if (!res.ok) {
-            console.error(
-                `❌ Не удалось отправить рекламу пользователю ${chatId}`
-            );
-            return;
-        }
-
-        const result = await res.text();
-        console.log(`✅ Реклама успешно отправлена пользователю ${chatId}`);
-    } catch (err) {
-        console.error(`❌ Ошибка GramAds для ${chatId}:`, err.message);
-    }
-}
-
-// === 💾 Сохраняем chatId ===
-export async function saveChatId(userId, chatId) {
+async function saveChatId(userId, chatId) {
     try {
         let user = await Chat.findOne({ userId });
-
         if (user) {
             user.chatId = chatId;
         } else {
             user = new Chat({ userId, chatId });
         }
-
         await user.save();
-        console.log(`Сохранен chatId для userId ${userId}: ${chatId}`);
     } catch (error) {
         console.error('Ошибка при сохранении chatId:', error);
     }
 }
 
-// === 📋 Проверка заданий Flyer ===
-export async function checkTasksCompleted(userId) {
+// =============================
+// FLYER API FUNCTIONS
+// =============================
+async function getTasksFromFlyer(userId, language_code = 'ru') {
     try {
+        console.log('[Flyer API] get_tasks request:', {
+            userId,
+            language_code,
+            limit: 10,
+        });
+
         const { data } = await axios.post(
-            'https://api.flyerservice.io/get_completed_tasks',
+            'https://api.flyerservice.io/get_tasks',
             {
                 key: config.flyerApiKey,
                 user_id: userId,
+                language_code,
+                limit: 10,
             },
-            {
-                headers: { 'Content-Type': 'application/json' },
-            }
+            { headers: { 'Content-Type': 'application/json' } }
         );
 
-        if (
-            data.error === 'The user does not have any tasks' ||
-            (data.result?.count_all_tasks || 0) === 0
-        ) {
-            return { status: 'no_tasks' };
+        console.log('[Flyer API] get_tasks response:', data);
+
+        if (data.error || !data.result || data.result.length === 0) {
+            return [];
         }
 
-        if (data.error) {
-            console.warn('Flyer API error:', data.error);
-            return { status: 'error' };
-        }
-
-        const completed = (data.result.completed_tasks || []).length;
-        const total = data.result.count_all_tasks;
-
-        if (completed === total) {
-            return { status: 'completed' };
-        } else {
-            return { status: 'incomplete', completed, total };
-        }
-    } catch (error) {
-        console.error('Flyer check error:', error.response?.data || error);
-        return { status: 'error' };
+        return data.result;
+    } catch (e) {
+        console.error(
+            '[Flyer API] get_tasks error:',
+            e.response?.data || e.message || e
+        );
+        return [];
     }
 }
 
-// === 🟢 Команда /start ===
+async function checkTaskCompletionFlyer(task) {
+    try {
+        if (
+            task.status &&
+            ['done', 'completed', 'complete', true].includes(task.status)
+        ) {
+            console.log('[Flyer API] check_task skipped (already done):', task);
+            return true;
+        }
+
+        console.log('[Flyer API] check_task request:', {
+            signature: task.signature,
+        });
+
+        const { data } = await axios.post(
+            'https://api.flyerservice.io/check_task',
+            {
+                key: config.flyerApiKey,
+                signature: task.signature,
+            },
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        console.log('[Flyer API] check_task response:', data);
+
+        if (data.error) return false;
+
+        // Теперь считаем waiting как успешный результат
+        return (
+            data.result === 'done' ||
+            data.result === 'completed' ||
+            data.result === true ||
+            data.result === 'waiting'
+        );
+    } catch (e) {
+        console.error(
+            '[Flyer API] check_task error:',
+            e.response?.data || e.message || e
+        );
+        return false;
+    }
+}
+
+async function checkAllTasksCompletedFlyer(tasks) {
+    for (const task of tasks) {
+        if (!task.signature) return false;
+        const done = await checkTaskCompletionFlyer(task);
+        if (!done) return false;
+    }
+    return true;
+}
+
+// =============================
+// BOT COMMANDS
+// =============================
 bot.command('start', async (ctx) => {
     const userId = ctx.from.id;
     const chatId = ctx.chat.id;
-
-    // Проверим, был ли пользователь в базе ДО сохранения
-    const wasInDbBefore = await Chat.findOne({ userId });
-
-    // Сохраняем chatId (или создаем нового пользователя)
     await saveChatId(userId, chatId);
 
-    // Проверяем задания
-    const flyerStatus = await checkTasksCompleted(userId);
+    const lang = ctx.from.language_code || 'ru';
 
-    if (flyerStatus.status === 'completed') {
-        const link = `${config.domain}/megapack?userId=${userId}`;
-        await ctx.reply(
-            `🔗 Вот твоя ссылка:\n\nОтправляй ссылку друзьям, чтобы пранкануть их.\n<a href="${link}">${link}</a>`,
-            { parse_mode: 'HTML' }
-        );
+    // 1. Получаем задания от Flyer
+    let flyerTasks = await getTasksFromFlyer(userId, lang);
 
-        // 📣 Показываем рекламу
-        await SendPostToChat(userId);
-        return;
-    }
+    if (flyerTasks.length === 0) {
+        // Если заданий нет — проверяем подписку на обязательные каналы
+        let allJoined = true;
+        for (const ch of CHANNELS) {
+            try {
+                const member = await ctx.api.getChatMember(ch.id, userId);
+                if (!member || ['left', 'kicked'].includes(member.status)) {
+                    allJoined = false;
+                    break;
+                }
+            } catch (err) {
+                console.error('Ошибка при проверке подписки:', err);
+                allJoined = false;
+                break;
+            }
+        }
 
-    if (flyerStatus.status === 'incomplete') {
-        const { completed, total } = flyerStatus;
-        return ctx.reply(
-            `🕒 Выполнено: ${completed} из ${total} заданий.\nЗавершите задания и снова нажмите /start:\n${MINI_APP_LINK}`
-        );
-    }
-
-    if (flyerStatus.status === 'no_tasks') {
-        if (wasInDbBefore) {
+        if (allJoined) {
+            // Подписан на оба канала — сразу даём доступ
             const link = `${config.domain}/megapack?userId=${userId}`;
-            await ctx.reply(
-                `🔗 Вот твоя ссылка:\n\nОтправляй ссылку друзьям, чтобы пранкануть их.\n<a href="${link}">${link}</a>`,
+            return ctx.reply(
+                `🎉 Спасибо за подписку! Вот твоя ссылка:\n\n<a href="${link}">${link}</a>`,
                 { parse_mode: 'HTML' }
             );
-
-            // 📣 Показываем рекламу
-            await SendPostToChat(userId);
-            return;
         } else {
+            // Не подписан — показываем кнопки
+            const keyboard = new InlineKeyboard();
+            CHANNELS.forEach((ch) => keyboard.url('Подписаться', ch.link));
+            keyboard.text('Продолжить', 'check_channels');
+
             return ctx.reply(
-                `📋 Чтобы получить доступ к ссылке, сначала открой задания:\n\n${MINI_APP_LINK}\n\nПосле выполнения нажмите /start`
+                'Подпишись на эти каналы, затем нажми "Продолжить":',
+                { reply_markup: keyboard }
             );
         }
     }
 
-    // Fallback на случай ошибки
-    return ctx.reply(
-        `⚠️ Произошла ошибка при проверке заданий. Попробуйте позже.`
+    // Если задания есть — формируем клавиатуру
+    const keyboard = new InlineKeyboard();
+    flyerTasks.forEach((task) => {
+        if (task.link && (task.title || task.name)) {
+            keyboard.url('Подписаться', task.link);
+        }
+    });
+    keyboard.text('Продолжить', 'check_flyer');
+
+    await ctx.reply(
+        'Выполни задания (подпишись), а затем нажми "Продолжить":',
+        { reply_markup: keyboard }
     );
+});
+
+// =============================
+// CALLBACKS
+// =============================
+
+// Проверка Flyer
+bot.callbackQuery('check_flyer', async (ctx) => {
+    const userId = ctx.from.id;
+    const lang = ctx.from.language_code || 'ru';
+
+    const tasks = await getTasksFromFlyer(userId, lang);
+    if (tasks.length === 0) {
+        await ctx.answerCallbackQuery(
+            'Нет заданий для проверки, попробуйте ещё раз'
+        );
+        return ctx.reply('Задания отсутствуют, попробуйте перезапустить бота.');
+    }
+
+    const allDone = await checkAllTasksCompletedFlyer(tasks);
+    if (allDone) {
+        const link = `${config.domain}/megapack?userId=${userId}`;
+        await ctx.reply(
+            `🎉 Все задания выполнены! Вот твоя ссылка:\n\n<a href="${link}">${link}</a>`,
+            {
+                parse_mode: 'HTML',
+            }
+        );
+        await ctx.answerCallbackQuery('Поздравляем! Ссылка отправлена.');
+    } else {
+        await ctx.reply(
+            '❗ Не все задания выполнены. Пожалуйста, завершите все и нажмите "Продолжить" снова.'
+        );
+        await ctx.answerCallbackQuery('Задания не завершены.');
+    }
+});
+
+// Проверка подписки на 2 канала
+bot.callbackQuery('check_channels', async (ctx) => {
+    const userId = ctx.from.id;
+
+    let allJoined = true;
+    for (const ch of CHANNELS) {
+        try {
+            const member = await ctx.api.getChatMember(ch.id, userId);
+            if (!member || ['left', 'kicked'].includes(member.status)) {
+                allJoined = false;
+                break;
+            }
+        } catch (err) {
+            console.error('Ошибка при проверке подписки:', err);
+            allJoined = false;
+            break;
+        }
+    }
+
+    if (allJoined) {
+        const link = `${config.domain}/megapack?userId=${userId}`;
+        await ctx.reply(
+            `🎉 Спасибо за подписку! Вот твоя ссылка, Отправь ее другу:\n\n<a href="${link}">${link}</a>`,
+            { parse_mode: 'HTML' }
+        );
+        await ctx.answerCallbackQuery('Подписка подтверждена!');
+    } else {
+        const keyboard = new InlineKeyboard();
+        CHANNELS.forEach((ch) => keyboard.url('Подписаться', ch.link));
+        keyboard.text('Продолжить', 'check_channels');
+
+        await ctx.reply(
+            '❗ Ты не подписан на все каналы. Подпишись и нажми "Продолжить":',
+            { reply_markup: keyboard }
+        );
+        await ctx.answerCallbackQuery('Подписка не подтверждена.');
+    }
 });
 
 export default bot;
